@@ -1,0 +1,17 @@
+apiVersion: polaris.synthesis.co.za/v1alpha1
+kind: PolarisBuildPipeline
+metadata:
+  name: example
+spec:
+  source:
+    codecommitrepo: tomtest
+    branch: facesearch
+  builds:
+  - name: facesearch-service
+    buildspec: examples/facesearch/image/facesearch-service/buildspec.yaml
+    containerrepository: facesearch-service
+    tag: 1.0.0-facesearch
+  - name: facesearch-web
+    buildspec: examples/facesearch/image/facesearch-web/buildspec.yaml
+    containerrepository: facesearch-web
+    tag: 1.0.0-facesearch

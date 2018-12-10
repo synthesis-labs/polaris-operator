@@ -1,0 +1,7 @@
+apiVersion: polaris.synthesis.co.za/v1alpha1
+kind: PolarisSourceRepository
+metadata:
+  name: example
+spec:
+  # Add fields here
+  name: tomtest

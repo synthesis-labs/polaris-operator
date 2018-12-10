@@ -1,0 +1,6 @@
+apiVersion: polaris.synthesis.co.za/v1alpha1
+kind: PolarisContainerRegistry
+metadata:
+  name: example
+spec:
+  name: example-registry
