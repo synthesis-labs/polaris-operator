@@ -7,6 +7,9 @@ import (
 	"html/template"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
@@ -250,7 +253,7 @@ func (r *ReconcilePolarisBuildPipeline) Reconcile(request reconcile.Request) (re
 	var buff bytes.Buffer
 
 	err = tmpl.Execute(&buff, instance.Spec)
-	print(buff.String())
+	//print(buff.String())
 
 	var templateBody = buff.String()
 
@@ -264,21 +267,65 @@ func (r *ReconcilePolarisBuildPipeline) Reconcile(request reconcile.Request) (re
 	svc := cloudformation.New(sess)
 
 	if instance.DeletionTimestamp != nil {
-		// Delete the stack and remove the finalizer
+		// Describe the stack to tear down any S3 buckets or whatevers
 		//
-		reqLogger.Info("Deleting stack!")
-		resp, err := svc.DeleteStack((&cloudformation.DeleteStackInput{}).
+		resp, err := svc.DescribeStackResources((&cloudformation.DescribeStackResourcesInput{}).
 			SetStackName(instance.Status.StackName))
-		reqLogger.Info("DeleteStack returned", "Resp", resp, "Err", err)
-
 		if err != nil {
 			instance.Status.StackError = err.Error()
-		}
-		if resp != nil {
+			fmt.Printf("Error from DescribeStackResources -> %s", err.Error())
+		} else {
 			instance.Status.StackResponse = resp.String()
-		}
 
-		instance.SetFinalizers([]string{})
+			for _, resource := range resp.StackResources {
+				reqLogger.Info(" - Checking whether we should delete this resource", "ResourceType", *resource.ResourceType)
+				if *resource.ResourceType == "AWS::S3::Bucket" &&
+					utils.HasFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack.buckets") {
+
+					// Delete that bucket!
+					//
+					reqLogger.Info(" * Would delete this bucket")
+					if resource.PhysicalResourceId != nil {
+						reqLogger.Info(" * Physical", "id", *resource.PhysicalResourceId)
+
+						// First we must delete all the objects
+						//
+						s3svc := s3.New(sess)
+
+						// Iteratively delete each object in the bucket
+						//
+						iter := s3manager.NewDeleteListIterator(s3svc, (&s3.ListObjectsInput{}).SetBucket(*resource.PhysicalResourceId))
+						err := s3manager.NewBatchDeleteWithClient(s3svc).Delete(aws.BackgroundContext(), iter)
+
+						// Then delete the bucket
+						//
+						resp, err := s3svc.DeleteBucket((&s3.DeleteBucketInput{}).SetBucket(*resource.PhysicalResourceId))
+						reqLogger.Info("DeleteBucket returned", "Resp", resp, "Err", err)
+					}
+
+					utils.RemoveFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack.buckets")
+				}
+			}
+
+			// Delete the stack and remove the finalizer
+			//
+			if utils.HasFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack") {
+				reqLogger.Info("Deleting stack!")
+				resp, err := svc.DeleteStack((&cloudformation.DeleteStackInput{}).
+					SetStackName(instance.Status.StackName))
+
+				reqLogger.Info("DeleteStack returned", "Resp", resp, "Err", err)
+
+				if err != nil {
+					instance.Status.StackError = err.Error()
+				}
+				if resp != nil {
+					instance.Status.StackResponse = resp.String()
+				}
+
+				utils.RemoveFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack")
+			}
+		}
 	} else {
 
 		if instance.Status.StackCreationAttempted {
@@ -342,6 +389,7 @@ func (r *ReconcilePolarisBuildPipeline) Reconcile(request reconcile.Request) (re
 				SetParameters(params).
 				SetCapabilities([]*string{&capabilityIam}),
 			)
+
 			reqLogger.Info("CreateStack returned", "Resp", resp, "Err", err)
 			if err != nil {
 				instance.Status.StackError = err.Error()
@@ -352,7 +400,9 @@ func (r *ReconcilePolarisBuildPipeline) Reconcile(request reconcile.Request) (re
 
 			// Add a finalizer so that we can delete the stack in future
 			//
-			instance.SetFinalizers([]string{"polarisbuildoperator.must.delete.aws.cloudformation"})
+			utils.AddFinalizers(&instance.ObjectMeta,
+				"polaris.cleanup.aws.stack",
+				"polaris.cleanup.aws.stack.buckets")
 		}
 	}
 
