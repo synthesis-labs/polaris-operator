@@ -29,135 +29,135 @@ import (
 
 var formationTemplate = `AWSTemplateFormatVersion: 2010-09-09
 Parameters:
-  PipelineName:
-    Type: String
-    Description: >-
-      Unique name of the pipeline
+	PipelineName:
+		Type: String
+		Description: >-
+			Unique name of the pipeline
 Resources:
-  CodeBuildServiceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codebuild.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: root
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Resource: "*"
-                Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                  - ecr:GetAuthorizationToken
-                  - s3:*
-              - Resource: "arn:aws:ecr:*"
-                Effect: Allow
-                Action:
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:BatchGetImage
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:PutImage
-                  - ecr:InitiateLayerUpload
-                  - ecr:UploadLayerPart
-                  - ecr:CompleteLayerUpload
-  CodePipelineServiceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codepipeline.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: root
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Resource: "*"
-                Effect: Allow
-                Action:
-                  - ecs:DescribeServices
-                  - ecs:DescribeTaskDefinition
-                  - ecs:DescribeTasks
-                  - ecs:ListTasks
-                  - ecs:RegisterTaskDefinition
-                  - ecs:UpdateService
-                  - codebuild:StartBuild
-                  - codebuild:BatchGetBuilds
-                  - iam:PassRole
-                  - codecommit:*
-                  - s3:*
-  ArtifactBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub ${PipelineName}-artifacts
-      AccessControl: Private
-{{range .Builds }}  CodeBuildProject{{.Name | CloudFormationName}}:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Artifacts:
-        Type: CODEPIPELINE
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: {{.Buildspec}}
-      Environment:
-        ComputeType: BUILD_GENERAL1_LARGE
-        Image: aws/codebuild/docker:17.09.0
-        Type: LINUX_CONTAINER
-        EnvironmentVariables:
-          - Name: AWS_DEFAULT_REGION
-            Value: !Ref AWS::Region
-          - Name: REPOSITORY_URI
-            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/{{.ContainerRepository}}
-      Name: !Sub ${PipelineName}-build-{{.Name }}
-      ServiceRole: !Ref CodeBuildServiceRole
-{{end}}  Pipeline:
-    Type: AWS::CodePipeline::Pipeline
-    Properties:
-      Name: !Sub ${PipelineName}-pipeline
-      RoleArn: !GetAtt CodePipelineServiceRole.Arn
-      ArtifactStore:
-        Type: S3
-        Location: !Ref ArtifactBucket
-      Stages:
-        - Name: Source
-          Actions:
-            - Name: App
-              ActionTypeId:
-                Category: Source
-                Owner: AWS
-                Version: 1
-                Provider: CodeCommit
-              Configuration:
-                RepositoryName: {{.Source.CodeCommitRepo}}
-                BranchName: {{.Source.Branch}}
-              OutputArtifacts:
-              - Name: App                
-              RunOrder: 1
-        - Name: Build
-          Actions:
-{{range .Builds }}            - Name: Build-{{.Name}}
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Version: 1
-                Provider: CodeBuild
-              Configuration:
-                ProjectName: !Ref CodeBuildProject{{.Name | CloudFormationName}}
-              InputArtifacts:
-                - Name: App
-              RunOrder: 2
+	CodeBuildServiceRole:
+		Type: AWS::IAM::Role
+		Properties:
+			Path: /
+			AssumeRolePolicyDocument:
+				Version: 2012-10-17
+				Statement:
+					- Effect: Allow
+						Principal:
+							Service: codebuild.amazonaws.com
+						Action: sts:AssumeRole
+			Policies:
+				- PolicyName: root
+					PolicyDocument:
+						Version: 2012-10-17
+						Statement:
+							- Resource: "*"
+								Effect: Allow
+								Action:
+									- logs:CreateLogGroup
+									- logs:CreateLogStream
+									- logs:PutLogEvents
+									- ecr:GetAuthorizationToken
+									- s3:*
+							- Resource: "arn:aws:ecr:*"
+								Effect: Allow
+								Action:
+									- ecr:GetDownloadUrlForLayer
+									- ecr:BatchGetImage
+									- ecr:BatchCheckLayerAvailability
+									- ecr:PutImage
+									- ecr:InitiateLayerUpload
+									- ecr:UploadLayerPart
+									- ecr:CompleteLayerUpload
+	CodePipelineServiceRole:
+		Type: AWS::IAM::Role
+		Properties:
+			Path: /
+			AssumeRolePolicyDocument:
+				Version: 2012-10-17
+				Statement:
+					- Effect: Allow
+						Principal:
+							Service: codepipeline.amazonaws.com
+						Action: sts:AssumeRole
+			Policies:
+				- PolicyName: root
+					PolicyDocument:
+						Version: 2012-10-17
+						Statement:
+							- Resource: "*"
+								Effect: Allow
+								Action:
+									- ecs:DescribeServices
+									- ecs:DescribeTaskDefinition
+									- ecs:DescribeTasks
+									- ecs:ListTasks
+									- ecs:RegisterTaskDefinition
+									- ecs:UpdateService
+									- codebuild:StartBuild
+									- codebuild:BatchGetBuilds
+									- iam:PassRole
+									- codecommit:*
+									- s3:*
+	ArtifactBucket:
+		Type: AWS::S3::Bucket
+		Properties:
+			BucketName: !Sub ${PipelineName}-artifacts
+			AccessControl: Private
+{{range .Builds }}	CodeBuildProject{{.Name | CloudFormationName}}:
+		Type: AWS::CodeBuild::Project
+		Properties:
+			Artifacts:
+				Type: CODEPIPELINE
+			Source:
+				Type: CODEPIPELINE
+				BuildSpec: {{.Buildspec}}
+			Environment:
+				ComputeType: BUILD_GENERAL1_LARGE
+				Image: aws/codebuild/docker:17.09.0
+				Type: LINUX_CONTAINER
+				EnvironmentVariables:
+					- Name: AWS_DEFAULT_REGION
+						Value: !Ref AWS::Region
+					- Name: REPOSITORY_URI
+						Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/{{.ContainerRepository}}
+			Name: !Sub ${PipelineName}-build-{{.Name }}
+			ServiceRole: !Ref CodeBuildServiceRole
+{{end}}	Pipeline:
+		Type: AWS::CodePipeline::Pipeline
+		Properties:
+			Name: !Sub ${PipelineName}-pipeline
+			RoleArn: !GetAtt CodePipelineServiceRole.Arn
+			ArtifactStore:
+				Type: S3
+				Location: !Ref ArtifactBucket
+			Stages:
+				- Name: Source
+					Actions:
+						- Name: App
+							ActionTypeId:
+								Category: Source
+								Owner: AWS
+								Version: 1
+								Provider: CodeCommit
+							Configuration:
+								RepositoryName: {{.Source.CodeCommitRepo}}
+								BranchName: {{.Source.Branch}}
+							OutputArtifacts:
+							- Name: App                
+							RunOrder: 1
+				- Name: Build
+					Actions:
+{{range .Builds }}						- Name: Build-{{.Name}}
+							ActionTypeId:
+								Category: Build
+								Owner: AWS
+								Version: 1
+								Provider: CodeBuild
+							Configuration:
+								ProjectName: !Ref CodeBuildProject{{.Name | CloudFormationName}}
+							InputArtifacts:
+								- Name: App
+							RunOrder: 2
 {{end}}
 `
 
