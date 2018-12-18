@@ -18,10 +18,6 @@ type PolarisSourceRepositorySpec struct {
 type PolarisSourceRepositoryStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
-	StackCreationAttempted bool   `json:"stackCreationAttempted"`
-	StackResponse          string `json:"stackResponse"`
-	StackError             string `json:"stackError"`
-	StackName              string `json:"stackName"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -33,6 +29,7 @@ type PolarisSourceRepository struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   PolarisSourceRepositorySpec   `json:"spec,omitempty"`
+	Stack  PolarisCloudformationStatus   `json:"stack,omitempty"`
 	Status PolarisSourceRepositoryStatus `json:"status,omitempty"`
 }
 

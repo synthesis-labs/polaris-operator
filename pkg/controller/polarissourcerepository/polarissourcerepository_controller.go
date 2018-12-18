@@ -2,7 +2,7 @@ package polarissourcerepository
 
 import (
 	"context"
-	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -129,66 +129,36 @@ func (r *ReconcilePolarisSourceRepository) Reconcile(request reconcile.Request) 
 		Region: aws.String("eu-west-1")},
 	)
 
-	// Create cloudformation service client
-	svc := cloudformation.New(sess)
-
+	// If instructed to delete
+	//
 	if instance.DeletionTimestamp != nil {
-		// Delete the stack and remove the finalizer
-		//
-		reqLogger.Info("Deleting stack!")
-		resp, err := svc.DeleteStack((&cloudformation.DeleteStackInput{}).
-			SetStackName(instance.Status.StackName))
-		reqLogger.Info("DeleteStack returned", "Resp", resp, "Err", err)
+		utils.ProcessStackDeletion(sess, &instance.ObjectMeta, &instance.Stack)
 
-		if err != nil {
-			instance.Status.StackError = err.Error()
-		}
-		if resp != nil {
-			instance.Status.StackResponse = resp.String()
-		}
+		err = r.client.Update(context.TODO(), instance)
+		reqLogger.Info("Updated status after deletion", "err", err)
 
-		instance.SetFinalizers([]string{})
-	} else {
-
-		if instance.Status.StackCreationAttempted {
-			reqLogger.Info("Stack creation already attempted")
-			return reconcile.Result{}, nil
-		}
-
-		reqLogger.Info("Creating stack!")
-
-		stackName := fmt.Sprintf("polaris-sourcerepository-%s-%s-%s", request.Namespace, request.Name, utils.GetULID())
-
-		// Remember the stackname
-		//
-		instance.Status.StackName = stackName
-		instance.Status.StackCreationAttempted = true
-
-		param := cloudformation.Parameter{
-			ParameterKey:   aws.String("RepositoryName"),
-			ParameterValue: aws.String(instance.Spec.Name),
-		}
-		params := []*cloudformation.Parameter{&param}
-		resp, err := svc.CreateStack((&cloudformation.CreateStackInput{}).
-			SetStackName(stackName).
-			SetTemplateBody(formationTemplate).
-			SetParameters(params),
-		)
-		reqLogger.Info("CreateStack returned", "Resp", resp, "Err", err)
-		if err != nil {
-			instance.Status.StackError = err.Error()
-		}
-		if resp != nil {
-			instance.Status.StackResponse = resp.String()
-		}
-
-		// Add a finalizer so that we can delete the stack in future
-		//
-		instance.SetFinalizers([]string{"polarisbuildoperator.must.delete.aws.cloudformation"})
+		return reconcile.Result{Requeue: false}, nil
 	}
+
+	// Otherwise create
+	//
+
+	// Parameters for the template
+	//
+	param := cloudformation.Parameter{
+		ParameterKey:   aws.String("RepositoryName"),
+		ParameterValue: aws.String(instance.Spec.Name),
+	}
+	params := []*cloudformation.Parameter{&param}
+
+	finalizers := []string{
+		"polaris.cleanup.aws.stack",
+	}
+
+	utils.ProcessStackCreation(request, sess, "sourcerepository", &instance.ObjectMeta, &instance.Stack, params, formationTemplate, finalizers)
 
 	err = r.client.Update(context.TODO(), instance)
 	reqLogger.Info("Updated status", "err", err)
 
-	return reconcile.Result{}, nil
+	return reconcile.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 }

@@ -2,8 +2,6 @@ package polariscontainerregistry
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	polarisv1alpha1 "github.com/synthesis-labs/polaris-operator/pkg/apis/polaris/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -131,91 +129,24 @@ func (r *ReconcilePolarisContainerRegistry) Reconcile(request reconcile.Request)
 		Region: aws.String("eu-west-1")},
 	)
 
-	// Create cloudformation service client
-	svc := cloudformation.New(sess)
-
 	if instance.DeletionTimestamp != nil {
-		// Delete the stack and remove the finalizer
-		//
-		reqLogger.Info("Deleting stack!")
-		resp, err := svc.DeleteStack((&cloudformation.DeleteStackInput{}).
-			SetStackName(instance.Status.StackName))
-		reqLogger.Info("DeleteStack returned", "Resp", resp, "Err", err)
-
-		if err != nil {
-			instance.Status.StackError = err.Error()
-		}
-		if resp != nil {
-			instance.Status.StackResponse = resp.String()
-		}
-
-		instance.SetFinalizers([]string{})
+		utils.ProcessStackDeletion(sess, &instance.ObjectMeta, &instance.Stack)
 	} else {
 
-		if instance.Status.StackCreationAttempted {
-			reqLogger.Info("Stack creation already attempted")
-
-			// Maybe we need to do an UpdateStack? Check if the details have changed i guess?
-			//
-			param := cloudformation.Parameter{
-				ParameterKey:   aws.String("RepositoryName"),
-				ParameterValue: aws.String(instance.Spec.Name),
-			}
-			params := []*cloudformation.Parameter{&param}
-			resp, err := svc.UpdateStack((&cloudformation.UpdateStackInput{}).
-				SetStackName(instance.Status.StackName).
-				SetTemplateBody(formationTemplate).
-				SetParameters(params),
-			)
-			reqLogger.Info("UpdateStack returned", "Resp", resp, "Err", err)
-			if err != nil {
-
-				if strings.Contains(err.Error(), "ValidationError: No updates are to be performed.") {
-					// Ignore the error if it already exists (thats totally ok)
-					//
-					instance.Status.StackError = ""
-				} else {
-					instance.Status.StackError = err.Error()
-				}
-			}
-			if resp != nil {
-				instance.Status.StackResponse = resp.String()
-			}
-		} else {
-
-			// Create a new stack
-			//
-			reqLogger.Info("Creating stack!")
-
-			stackName := fmt.Sprintf("polaris-containerregistry-%s-%s-%s", request.Namespace, request.Name, utils.GetULID())
-
-			// Remember the stackname
-			//
-			instance.Status.StackName = stackName
-			instance.Status.StackCreationAttempted = true
-
-			param := cloudformation.Parameter{
-				ParameterKey:   aws.String("RepositoryName"),
-				ParameterValue: aws.String(instance.Spec.Name),
-			}
-			params := []*cloudformation.Parameter{&param}
-			resp, err := svc.CreateStack((&cloudformation.CreateStackInput{}).
-				SetStackName(stackName).
-				SetTemplateBody(formationTemplate).
-				SetParameters(params),
-			)
-			reqLogger.Info("CreateStack returned", "Resp", resp, "Err", err)
-			if err != nil {
-				instance.Status.StackError = err.Error()
-			}
-			if resp != nil {
-				instance.Status.StackResponse = resp.String()
-			}
-
-			// Add a finalizer so that we can delete the stack in future
-			//
-			instance.SetFinalizers([]string{"polarisbuildoperator.must.delete.aws.cloudformation"})
+		// Parameters for the template
+		//
+		param := cloudformation.Parameter{
+			ParameterKey:   aws.String("RepositoryName"),
+			ParameterValue: aws.String(instance.Spec.Name),
 		}
+		params := []*cloudformation.Parameter{&param}
+
+		finalizers := []string{
+			"polaris.cleanup.aws.stack",
+			"polaris.cleanup.aws.stack.containerregistry",
+		}
+
+		utils.ProcessStackCreation(request, sess, "containerregistry", &instance.ObjectMeta, &instance.Stack, params, formationTemplate, finalizers)
 	}
 
 	err = r.client.Update(context.TODO(), instance)

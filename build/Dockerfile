@@ -1,6 +1,6 @@
 FROM alpine:3.8
 
-RUN apk upgrade --update --no-cache
+RUN apk upgrade --update --no-cache && apk add curl
 
 USER nobody
 
