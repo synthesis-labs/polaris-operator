@@ -16,7 +16,7 @@ type PolarisBuildPipelineSourceSpec struct {
 // PolarisBuildPipelineBuildSpec defines a particular "build" part of the spec
 type PolarisBuildPipelineBuildSpec struct {
 	Name                string `json:"name"`
-	Buildspec           string `json:"buildspec"`
+	DockerfileLocation  string `json:"dockerfilelocation"`
 	ContainerRepository string `json:"containerrepository"`
 	Tag                 string `json:"tag"`
 }

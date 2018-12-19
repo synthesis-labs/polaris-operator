@@ -105,7 +105,28 @@ Resources:
         Type: CODEPIPELINE
       Source:
         Type: CODEPIPELINE
-        BuildSpec: {{.Buildspec}}
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - $(aws ecr get-login --no-include-email)
+                - BUILDTAG="$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | head -c 8)"
+                - TAGGED_URI="${REPOSITORY_URI}:${TAG}"
+                - BUILD_URI="${REPOSITORY_URI}:${BUILDTAG}"
+                - LATEST_URI="${REPOSITORY_URI}:latest"
+            build:
+              commands:
+                - cd "$DOCKERFILE_LOCATION"
+                - docker build --tag "$TAGGED_URI" .
+                - docker build --tag "$BUILD_URI" .
+                - docker build --tag "$LATEST_URI" .
+            post_build:
+              commands:
+                - docker push "$TAGGED_URI"
+                - docker push "$BUILD_URI"
+                - docker push "$LATEST_URI"
+        
       Environment:
         ComputeType: BUILD_GENERAL1_LARGE
         Image: aws/codebuild/docker:17.09.0
@@ -115,6 +136,10 @@ Resources:
             Value: !Ref AWS::Region
           - Name: REPOSITORY_URI
             Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/{{.ContainerRepository}}
+          - Name: DOCKERFILE_LOCATION
+            Value: {{ .DockerfileLocation }}
+          - Name: TAG
+            Value: {{ .Tag }}
       Name: !Sub ${PipelineName}-build-{{.Name }}
       ServiceRole: !Ref CodeBuildServiceRole
 {{end}}

@@ -8,10 +8,10 @@ spec:
     branch: facesearch
   builds:
   - name: facesearch-service
-    buildspec: examples/facesearch/image/facesearch-service/buildspec.yaml
+    dockerfilelocation: examples/facesearch/image/facesearch-service/
     containerrepository: facesearch-service
-    tag: 1.0.0-facesearch
+    tag: 1.0.0
   - name: facesearch-web
-    buildspec: examples/facesearch/image/facesearch-web/buildspec.yaml
+    dockerfilelocation: examples/facesearch/image/facesearch-web/
     containerrepository: facesearch-web
-    tag: 1.0.0-facesearch
+    tag: 1.0.0
