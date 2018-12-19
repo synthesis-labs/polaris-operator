@@ -106,10 +106,15 @@ func (r *ReconcilePolarisStack) Reconcile(request reconcile.Request) (reconcile.
 	// If instructed to delete
 	//
 	if instance.DeletionTimestamp != nil {
-		deleteStack(sess, instance)
+		err = deleteStack(sess, instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 
 		err = r.client.Update(context.TODO(), instance)
-		reqLogger.Info("Updated status after deletion", "err", err)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 
 		return reconcile.Result{Requeue: false}, nil
 	}
@@ -188,6 +193,10 @@ func (r *ReconcilePolarisStack) Reconcile(request reconcile.Request) (reconcile.
 	}
 
 	err = r.client.Update(context.TODO(), instance)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 }
 
@@ -196,12 +205,11 @@ func updateStack(
 	stackName string,
 	parameters []*cloudformation.Parameter,
 	templateBody string) error {
+
 	// Create cloudformation service client
 	//
 	cloudformationsvc := cloudformation.New(sess)
 
-	// Maybe we need to do an UpdateStack? Check if the details have changed i guess?
-	//
 	capabilityIam := "CAPABILITY_IAM"
 	_, err := cloudformationsvc.UpdateStack((&cloudformation.UpdateStackInput{}).
 		SetStackName(stackName).
@@ -218,6 +226,7 @@ func createStack(
 	parameters []*cloudformation.Parameter,
 	templateBody string,
 	finalizers []string) error {
+
 	// Create cloudformation service client
 	//
 	cloudformationsvc := cloudformation.New(sess)
@@ -230,7 +239,12 @@ func createStack(
 		SetCapabilities([]*string{&capabilityIam}),
 	)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	log.Info("Created stack", "StackName", stackName)
+	return nil
 }
 
 func getStack(sess *session.Session, stackName string) (*cloudformation.Stack, error) {
@@ -246,15 +260,35 @@ func getStack(sess *session.Session, stackName string) (*cloudformation.Stack, e
 		return nil, goerrors.New("Error from DescribeStacks -> Unable to find stack")
 	}
 
-	// TODO: Detect drift here too
+	// TODO: Detect drift here too maybe?
 	//
 
 	return resp.Stacks[0], nil
 }
 
-func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) error {
+// Higher order function which encapsulates the logic of:
+// if correctResourceType() and hasFinalizer() then
+//    deleteResource()
+//    removeFinalizer()
+//
+func deleteResourceAndRemoveFinalizer(
+	instance *polarisv1alpha1.PolarisStack,
+	resource *cloudformation.StackResource,
+	finalizer string,
+	resourceType string,
+	deleteFunc func() error) error {
+	if *resource.ResourceType == resourceType && utils.HasFinalizer(&instance.ObjectMeta, finalizer) {
+		log.Info("Deleting specific resource", "ResourceType", resourceType, "Finalizer", finalizer)
+		err := deleteFunc()
+		if err != nil {
+			return err
+		}
+		utils.RemoveFinalizer(&instance.ObjectMeta, finalizer)
+	}
+	return nil
+}
 
-	reqLogger := log.WithValues()
+func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) error {
 
 	// Create cloudformation service client
 	//
@@ -268,16 +302,16 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 		return err
 	}
 
+	// Very specific delete apis for each naughty resource that cloudformation refuses to delete
+	//
 	for _, resource := range resp.StackResources {
-		reqLogger.Info(" - Checking whether we should delete this resource", "ResourceType", *resource.ResourceType)
-
 		if resource.PhysicalResourceId == nil {
 			continue
 		}
 
-		if *resource.ResourceType == "AWS::S3::Bucket" &&
-			utils.HasFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack.buckets") {
-
+		// Handle S3 Buckets (delete all objects, then the bucket itself)
+		//
+		err = deleteResourceAndRemoveFinalizer(instance, resource, "polaris.cleanup.aws.stack.buckets", "AWS::S3::Bucket", func() error {
 			// First we must delete all the objects
 			//
 			s3svc := s3.New(sess)
@@ -296,12 +330,15 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 			if err != nil {
 				return err
 			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 
-			utils.RemoveFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack.buckets")
-
-		} else if *resource.ResourceType == "AWS::ECR::Repository" &&
-			utils.HasFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack.containerregistry") {
-
+		// Handle ecrs - they may contain images so cloudformation doesn't remove them
+		//
+		err = deleteResourceAndRemoveFinalizer(instance, resource, "polaris.cleanup.aws.stack.containerregistry", "AWS::ECR::Repository", func() error {
 			// Force delete the ECR
 			//
 			ecrsvc := ecr.New(sess)
@@ -313,14 +350,17 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 				return err
 			}
 
-			utils.RemoveFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack.containerregistry")
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 
 	// Delete the stack and remove the finalizer
 	//
 	if utils.HasFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack") {
-		reqLogger.Info("Deleting stack!")
+		log.Info("Deleting stack", "StackName", instance.Status.Name)
 		_, err := cloudformationsvc.DeleteStack((&cloudformation.DeleteStackInput{}).
 			SetStackName(instance.Status.Name))
 		if err != nil {

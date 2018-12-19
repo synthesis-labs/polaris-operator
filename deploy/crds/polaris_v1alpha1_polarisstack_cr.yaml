@@ -27,4 +27,5 @@ spec:
   parameters:
     RepositoryName: somethingcool
   finalizers:
+  - polaris.cleanup.aws.stack.containerregistry
   - polaris.cleanup.aws.stack
