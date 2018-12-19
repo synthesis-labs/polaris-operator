@@ -181,7 +181,7 @@ func (r *ReconcilePolarisStack) Reconcile(request reconcile.Request) (reconcile.
 	} else {
 		// First time we are creating it
 		//
-		instance.Status.Name = strings.ToLower(fmt.Sprintf("polaris-stack-%s-%s-%s-%s", nickname, request.Namespace, request.Name, utils.GetULID()))
+		instance.Status.Name = strings.ToLower(fmt.Sprintf("polaris-stack-%s-%s-%s", nickname, request.Namespace, request.Name))
 		err = createStack(sess, instance.Status.Name, params, templateBody, finalizers)
 		if err != nil {
 			reqLogger.Error(err, "Unable to create stack")
@@ -299,7 +299,13 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 	//
 	resp, err := cloudformationsvc.DescribeStackResources((&cloudformation.DescribeStackResourcesInput{}).
 		SetStackName(instance.Status.Name))
-	if err != nil {
+
+	// Ignore the fact that the stack might already be deleted
+	//
+	if err != nil && strings.Contains(err.Error(), "does not exist") {
+		// Do nothing - stack already deleted, but need to carry on to remove all the finalizers
+		//
+	} else if err != nil {
 		return err
 	}
 
@@ -358,7 +364,10 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 		log.Info("Deleting stack", "StackName", instance.Status.Name)
 		_, err := cloudformationsvc.DeleteStack((&cloudformation.DeleteStackInput{}).
 			SetStackName(instance.Status.Name))
-		if err != nil {
+
+		if err != nil && strings.Contains(err.Error(), "does not exist") {
+			log.Info("Stack does not exist")
+		} else if err != nil {
 			return err
 		}
 
