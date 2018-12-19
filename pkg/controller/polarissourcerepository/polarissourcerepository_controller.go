@@ -2,18 +2,15 @@ package polarissourcerepository
 
 import (
 	"context"
-	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
 	polarisv1alpha1 "github.com/synthesis-labs/polaris-operator/pkg/apis/polaris/v1alpha1"
-	"github.com/synthesis-labs/polaris-operator/pkg/utils"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -77,7 +74,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner PolarisSourceRepository
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+	err = c.Watch(&source.Kind{Type: &polarisv1alpha1.PolarisStack{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &polarisv1alpha1.PolarisSourceRepository{},
 	})
@@ -123,42 +120,58 @@ func (r *ReconcilePolarisSourceRepository) Reconcile(request reconcile.Request) 
 		return reconcile.Result{}, err
 	}
 
-	// Initialize a session in us-west-2 that the SDK will use to load
-	// credentials from the shared credentials file ~/.aws/credentials.
-	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String("eu-west-1")},
-	)
-
-	// If instructed to delete
+	// Create the definition of the stack for this instance
 	//
-	if instance.DeletionTimestamp != nil {
-		utils.ProcessStackDeletion(sess, &instance.ObjectMeta, &instance.Stack)
+	stack := getStackForInstance(instance)
 
-		err = r.client.Update(context.TODO(), instance)
-		reqLogger.Info("Updated status after deletion", "err", err)
-
-		return reconcile.Result{Requeue: false}, nil
+	// Set instance as the owner and controller
+	//
+	if err := controllerutil.SetControllerReference(instance, stack, r.scheme); err != nil {
+		return reconcile.Result{}, err
 	}
 
-	// Otherwise create
+	// Check if the stack already exists
 	//
+	found := &polarisv1alpha1.PolarisStack{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: stack.Name, Namespace: stack.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		reqLogger.Info("Creating a new stack", "Stack.Namespace", stack.Namespace, "Stack.Name", stack.Name)
+		err = r.client.Create(context.TODO(), stack)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 
-	// Parameters for the template
-	//
-	param := cloudformation.Parameter{
-		ParameterKey:   aws.String("RepositoryName"),
-		ParameterValue: aws.String(instance.Spec.Name),
+		// Stack created successfully - don't requeue
+		//
+		return reconcile.Result{}, nil
+	} else if err != nil {
+		return reconcile.Result{}, err
 	}
-	params := []*cloudformation.Parameter{&param}
 
-	finalizers := []string{
-		"polaris.cleanup.aws.stack",
+	// Stack already exists - don't requeue
+	reqLogger.Info("Skip reconcile: Stack already exists", "Stack.Namespace", found.Namespace, "Stack.Name", found.Name)
+	return reconcile.Result{}, nil
+}
+
+func getStackForInstance(instance *polarisv1alpha1.PolarisSourceRepository) *polarisv1alpha1.PolarisStack {
+	labels := map[string]string{
+		"app": instance.Name,
 	}
-
-	utils.ProcessStackCreation(request, sess, "sourcerepository", &instance.ObjectMeta, &instance.Stack, params, formationTemplate, finalizers)
-
-	err = r.client.Update(context.TODO(), instance)
-	reqLogger.Info("Updated status", "err", err)
-
-	return reconcile.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+	return &polarisv1alpha1.PolarisStack{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-sourcerepository-stack",
+			Namespace: instance.Namespace,
+			Labels:    labels,
+		},
+		Spec: polarisv1alpha1.PolarisStackSpec{
+			Nickname: "sourcerepository",
+			Finalizers: []string{
+				"polaris.cleanup.aws.stack",
+			},
+			Parameters: map[string]string{
+				"RepositoryName": instance.Spec.Name,
+			},
+			Template: formationTemplate,
+		},
+	}
 }

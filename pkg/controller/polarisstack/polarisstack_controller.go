@@ -157,8 +157,9 @@ func (r *ReconcilePolarisStack) Reconcile(request reconcile.Request) (reconcile.
 			//
 			err = updateStack(sess, instance.Status.Name, params, templateBody)
 			if err != nil {
-				if !(strings.Contains(err.Error(), "ValidationError: No updates are to be performed.") ||
-					strings.Contains(err.Error(), "_IN_PROGRESS state and can not be updated")) {
+				if !(strings.Contains(err.Error(), "ValidationError: No updates are to be performed") ||
+					strings.Contains(err.Error(), "_IN_PROGRESS state and can not be updated") || // Deals with CREATE_ and UPDATE_ cases
+					strings.Contains(err.Error(), "ROLLBACK_COMPLETE state and can not be updated")) {
 					reqLogger.Error(err, "Unable to update stack")
 					return reconcile.Result{}, err
 				}
@@ -332,9 +333,6 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 			}
 			return nil
 		})
-		if err != nil {
-			return err
-		}
 
 		// Handle ecrs - they may contain images so cloudformation doesn't remove them
 		//
@@ -352,9 +350,6 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 
 			return nil
 		})
-		if err != nil {
-			return err
-		}
 	}
 
 	// Delete the stack and remove the finalizer

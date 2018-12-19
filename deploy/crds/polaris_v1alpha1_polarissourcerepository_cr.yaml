@@ -3,5 +3,4 @@ kind: PolarisSourceRepository
 metadata:
   name: example
 spec:
-  # Add fields here
   name: tomtest

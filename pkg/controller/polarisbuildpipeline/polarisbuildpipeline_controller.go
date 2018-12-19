@@ -2,19 +2,17 @@ package polarisbuildpipeline
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
 	polarisv1alpha1 "github.com/synthesis-labs/polaris-operator/pkg/apis/polaris/v1alpha1"
 	"github.com/synthesis-labs/polaris-operator/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -131,7 +129,7 @@ Resources:
       Stages:
         - Name: Source
           Actions:
-            - Name: App
+            - Name: fetch-sources
               ActionTypeId:
                 Category: Source
                 Owner: AWS
@@ -141,12 +139,12 @@ Resources:
                 RepositoryName: {{.Source.CodeCommitRepo}}
                 BranchName: {{.Source.Branch}}
               OutputArtifacts:
-              - Name: App                
+              - Name: Sources                
               RunOrder: 1
         - Name: Build
           Actions:
 {{range .Builds }}
-            - Name: Build-{{.Name}}
+            - Name: build-{{.Name}}
               ActionTypeId:
                 Category: Build
                 Owner: AWS
@@ -155,7 +153,7 @@ Resources:
               Configuration:
                 ProjectName: !Ref CodeBuildProject{{.Name | CloudFormationName}}
               InputArtifacts:
-                - Name: App
+                - Name: Sources
               RunOrder: 2
 {{end}}
 `
@@ -240,47 +238,67 @@ func (r *ReconcilePolarisBuildPipeline) Reconcile(request reconcile.Request) (re
 		return reconcile.Result{}, err
 	}
 
-	templateBody, err := utils.RenderCloudformationTemplate(formationTemplate, instance.Spec)
+	// Create the definition of the stack for this instance
+	//
+	stack, err := getStackForInstance(instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Initialize a session in us-west-2 that the SDK will use to load
-	// credentials from the shared credentials file ~/.aws/credentials.
-	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String("eu-west-1")},
-	)
-
-	if instance.DeletionTimestamp != nil {
-		utils.ProcessStackDeletion(sess, &instance.ObjectMeta, &instance.Stack)
-	} else {
-
-		// Deal with local parameters in the template
-		//
-		if instance.Status.PipelineName == "" {
-			// Generate a new pipeline name
-			//
-			instance.Status.PipelineName = strings.ToLower(fmt.Sprintf("pbp-%s-%s-%s", request.Namespace, request.Name, utils.GetULID()))
-		}
-
-		// Parameters for the template
-		//
-		param := cloudformation.Parameter{
-			ParameterKey:   aws.String("PipelineName"),
-			ParameterValue: aws.String(instance.Status.PipelineName),
-		}
-		params := []*cloudformation.Parameter{&param}
-
-		finalizers := []string{
-			"polaris.cleanup.aws.stack",
-			"polaris.cleanup.aws.stack.buckets",
-		}
-
-		utils.ProcessStackCreation(request, sess, "ci", &instance.ObjectMeta, &instance.Stack, params, templateBody, finalizers)
+	// Set instance as the owner and controller
+	//
+	if err := controllerutil.SetControllerReference(instance, stack, r.scheme); err != nil {
+		return reconcile.Result{}, err
 	}
 
-	err = r.client.Update(context.TODO(), instance)
-	reqLogger.Info("Updated status", "err", err)
+	// Check if the stack already exists
+	//
+	found := &polarisv1alpha1.PolarisStack{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: stack.Name, Namespace: stack.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		reqLogger.Info("Creating a new stack", "Stack.Namespace", stack.Namespace, "Stack.Name", stack.Name)
+		err = r.client.Create(context.TODO(), stack)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 
+		// Stack created successfully - don't requeue
+		//
+		return reconcile.Result{}, nil
+	} else if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	// Stack already exists - don't requeue
+	reqLogger.Info("Skip reconcile: Stack already exists", "Stack.Namespace", found.Namespace, "Stack.Name", found.Name)
 	return reconcile.Result{}, nil
+}
+
+func getStackForInstance(instance *polarisv1alpha1.PolarisBuildPipeline) (*polarisv1alpha1.PolarisStack, error) {
+	templateBody, err := utils.RenderCloudformationTemplate(formationTemplate, instance.Spec)
+	if err != nil {
+		return nil, err
+	}
+
+	labels := map[string]string{
+		"app": instance.Name,
+	}
+	return &polarisv1alpha1.PolarisStack{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-ci-stack",
+			Namespace: instance.Namespace,
+			Labels:    labels,
+		},
+		Spec: polarisv1alpha1.PolarisStackSpec{
+			Nickname: "ci",
+			Finalizers: []string{
+				"polaris.cleanup.aws.stack.buckets",
+				"polaris.cleanup.aws.stack",
+			},
+			Parameters: map[string]string{
+				"PipelineName": instance.Namespace + "-" + instance.Name,
+			},
+			Template: templateBody,
+		},
+	}, nil
 }

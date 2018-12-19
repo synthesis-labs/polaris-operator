@@ -6,34 +6,31 @@ import (
 	polarisv1alpha1 "github.com/synthesis-labs/polaris-operator/pkg/apis/polaris/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
-
-	"github.com/synthesis-labs/polaris-operator/pkg/utils"
 )
 
 var formationTemplate = `AWSTemplateFormatVersion: 2010-09-09
 Description: 'Polaris operator - PolarisContainerRegistry'
 Parameters:
-    RepositoryName:
+    RegistryName:
         Type: String
         Description: >-
-            What should the ECR Repository be named
+            What should the ECR Registry be named
 Resources:
     ECRRepository:
         Type: AWS::ECR::Repository
         Properties:
-            RepositoryName: !Ref RepositoryName
+            RepositoryName: !Ref RegistryName
 Outputs:
     RepositoryName:
         Value: !Ref ECRRepository
@@ -123,34 +120,59 @@ func (r *ReconcilePolarisContainerRegistry) Reconcile(request reconcile.Request)
 		return reconcile.Result{}, err
 	}
 
-	// Initialize a session in us-west-2 that the SDK will use to load
-	// credentials from the shared credentials file ~/.aws/credentials.
-	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String("eu-west-1")},
-	)
+	// Create the definition of the stack for this instance
+	//
+	stack := getStackForInstance(instance)
 
-	if instance.DeletionTimestamp != nil {
-		utils.ProcessStackDeletion(sess, &instance.ObjectMeta, &instance.Stack)
-	} else {
-
-		// Parameters for the template
-		//
-		param := cloudformation.Parameter{
-			ParameterKey:   aws.String("RepositoryName"),
-			ParameterValue: aws.String(instance.Spec.Name),
-		}
-		params := []*cloudformation.Parameter{&param}
-
-		finalizers := []string{
-			"polaris.cleanup.aws.stack",
-			"polaris.cleanup.aws.stack.containerregistry",
-		}
-
-		utils.ProcessStackCreation(request, sess, "containerregistry", &instance.ObjectMeta, &instance.Stack, params, formationTemplate, finalizers)
+	// Set instance as the owner and controller
+	//
+	if err := controllerutil.SetControllerReference(instance, stack, r.scheme); err != nil {
+		return reconcile.Result{}, err
 	}
 
-	err = r.client.Update(context.TODO(), instance)
-	reqLogger.Info("Updated status", "err", err)
+	// Check if the stack already exists
+	//
+	found := &polarisv1alpha1.PolarisStack{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: stack.Name, Namespace: stack.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		reqLogger.Info("Creating a new stack", "Stack.Namespace", stack.Namespace, "Stack.Name", stack.Name)
+		err = r.client.Create(context.TODO(), stack)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 
+		// Stack created successfully - don't requeue
+		//
+		return reconcile.Result{}, nil
+	} else if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	// Stack already exists - don't requeue
+	reqLogger.Info("Skip reconcile: Stack already exists", "Stack.Namespace", found.Namespace, "Stack.Name", found.Name)
 	return reconcile.Result{}, nil
+}
+
+func getStackForInstance(instance *polarisv1alpha1.PolarisContainerRegistry) *polarisv1alpha1.PolarisStack {
+	labels := map[string]string{
+		"app": instance.Name,
+	}
+	return &polarisv1alpha1.PolarisStack{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-containerregistry-stack",
+			Namespace: instance.Namespace,
+			Labels:    labels,
+		},
+		Spec: polarisv1alpha1.PolarisStackSpec{
+			Nickname: "containerregistry",
+			Finalizers: []string{
+				"polaris.cleanup.aws.stack.containerregistry",
+				"polaris.cleanup.aws.stack",
+			},
+			Parameters: map[string]string{
+				"RegistryName": instance.Spec.Name,
+			},
+			Template: formationTemplate,
+		},
+	}
 }

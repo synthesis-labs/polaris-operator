@@ -12,5 +12,6 @@ spec:
     shortNames:
     - pbp
     - buildpipeline
+    - ci
   scope: Namespaced
   version: v1alpha1
