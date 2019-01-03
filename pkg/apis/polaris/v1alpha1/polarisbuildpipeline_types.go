@@ -13,20 +13,12 @@ type PolarisBuildPipelineSourceSpec struct {
 	Branch         string `json:"branch"`
 }
 
-// PolarisBuildPipelineBuildSpec defines a particular "build" part of the spec
-type PolarisBuildPipelineBuildSpec struct {
-	Name                string `json:"name"`
-	DockerfileLocation  string `json:"dockerfilelocation"`
-	ContainerRepository string `json:"containerrepository"`
-	Tag                 string `json:"tag"`
-}
-
 // PolarisBuildPipelineSpec defines the desired state of PolarisBuildPipeline
 type PolarisBuildPipelineSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
-	Source PolarisBuildPipelineSourceSpec  `json:"source"`
-	Builds []PolarisBuildPipelineBuildSpec `json:"builds"`
+	Source PolarisBuildPipelineSourceSpec `json:"source"`
+	Builds []PolarisBuildStepBuildSpec    `json:"builds,omitempty"`
 }
 
 // PolarisBuildPipelineStatus defines the observed state of PolarisBuildPipeline

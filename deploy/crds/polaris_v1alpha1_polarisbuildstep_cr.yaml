@@ -1,0 +1,11 @@
+apiVersion: polaris.synthesis.co.za/v1alpha1
+kind: PolarisBuildStep
+metadata:
+  name: example-buildstep
+spec:
+  pipeline: example-pipeline
+  builds:
+  - name: somebuild
+    dockerfilelocation: somewhere/in/the/root
+    containerregistry: someregistry
+    tag: 1.0.0

@@ -1,17 +1,13 @@
 apiVersion: polaris.synthesis.co.za/v1alpha1
 kind: PolarisBuildPipeline
 metadata:
-  name: example
+  name: example-pipeline
 spec:
   source:
-    codecommitrepo: tomtest
-    branch: facesearch
+    codecommitrepo: dummyrepo
+    branch: dummyref
   builds:
-  - name: facesearch-service
-    dockerfilelocation: examples/facesearch/image/facesearch-service/
-    containerrepository: facesearch-service
-    tag: 1.0.0
-  - name: facesearch-web
-    dockerfilelocation: examples/facesearch/image/facesearch-web/
-    containerrepository: facesearch-web
-    tag: 1.0.0
+  - name: dummy1
+    dockerfilelocation: dummy2
+    containerregistry: dummy3
+    tag: dummy4

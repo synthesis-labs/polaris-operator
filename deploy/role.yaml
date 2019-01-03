@@ -45,5 +45,6 @@ rules:
   - polariscontainerregistries
   - polarissourcerepositories
   - polarisstacks
+  - polarisbuildsteps
   verbs:
   - '*'

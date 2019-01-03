@@ -133,55 +133,15 @@ func (r *ReconcilePolarisStack) Reconcile(request reconcile.Request) (reconcile.
 	}
 	finalizers := instance.Spec.Finalizers
 
-	// Have we got a stack name?
+	stackName := strings.ToLower(fmt.Sprintf("polaris-stack-%s-%s-%s", nickname, request.Namespace, request.Name))
+
+	// We already have a stack name, check what cloudformation has...
 	//
-	if instance.Status.Name != "" {
-		// We already have a stack name, check what cloudformation has...
+	stack, err := getStack(sess, stackName)
+	if err != nil {
+		// Cloudformation does not have it so create it (re-using the same name)
 		//
-		stack, err := getStack(sess, instance.Status.Name)
-		if err != nil {
-			// Cloudformation does not have it so create it (re-using the same name)
-			//
-			err = createStack(sess, instance.Status.Name, params, templateBody, finalizers)
-			if err != nil {
-				reqLogger.Error(err, "Unable to create stack")
-				return reconcile.Result{}, err
-			}
-
-			// Add the finalizers so that we can delete the stack in future
-			//
-			utils.AddFinalizers(&instance.ObjectMeta, finalizers...)
-
-		} else {
-			// Cloudformation has got it - just update it at CF and then pull status back down
-			//
-			err = updateStack(sess, instance.Status.Name, params, templateBody)
-			if err != nil {
-				if !(strings.Contains(err.Error(), "ValidationError: No updates are to be performed") ||
-					strings.Contains(err.Error(), "_IN_PROGRESS state and can not be updated") || // Deals with CREATE_ and UPDATE_ cases
-					strings.Contains(err.Error(), "ROLLBACK_COMPLETE state and can not be updated")) {
-					reqLogger.Error(err, "Unable to update stack")
-					return reconcile.Result{}, err
-				}
-			}
-
-			// Update the state etc
-			//
-			instance.Status.Status = *stack.StackStatus
-			instance.Status.Name = *stack.StackName
-			instance.Status.ID = *stack.StackId
-			instance.Status.Outputs = map[string]string{}
-			for _, output := range stack.Outputs {
-				instance.Status.Outputs[*output.OutputKey] = *output.OutputValue
-			}
-			if stack.StackStatusReason != nil {
-				instance.Status.StatusReason = *stack.StackStatusReason
-			}
-		}
-	} else {
-		// First time we are creating it
-		//
-		instance.Status.Name = strings.ToLower(fmt.Sprintf("polaris-stack-%s-%s-%s", nickname, request.Namespace, request.Name))
+		instance.Status.Name = stackName
 		err = createStack(sess, instance.Status.Name, params, templateBody, finalizers)
 		if err != nil {
 			reqLogger.Error(err, "Unable to create stack")
@@ -191,6 +151,32 @@ func (r *ReconcilePolarisStack) Reconcile(request reconcile.Request) (reconcile.
 		// Add the finalizers so that we can delete the stack in future
 		//
 		utils.AddFinalizers(&instance.ObjectMeta, finalizers...)
+
+	} else {
+		// Cloudformation has got it - just update it at CF and then pull status back down
+		//
+		err = updateStack(sess, instance.Status.Name, params, templateBody)
+		if err != nil {
+			if !(strings.Contains(err.Error(), "ValidationError: No updates are to be performed") ||
+				strings.Contains(err.Error(), "_IN_PROGRESS state and can not be updated") || // Deals with CREATE_ and UPDATE_ cases
+				strings.Contains(err.Error(), "ROLLBACK_COMPLETE state and can not be updated")) {
+				reqLogger.Error(err, "Unable to update stack")
+				return reconcile.Result{}, err
+			}
+		}
+
+		// Update the state etc
+		//
+		instance.Status.Status = *stack.StackStatus
+		instance.Status.Name = *stack.StackName
+		instance.Status.ID = *stack.StackId
+		instance.Status.Outputs = map[string]string{}
+		for _, output := range stack.Outputs {
+			instance.Status.Outputs[*output.OutputKey] = *output.OutputValue
+		}
+		if stack.StackStatusReason != nil {
+			instance.Status.StatusReason = *stack.StackStatusReason
+		}
 	}
 
 	err = r.client.Update(context.TODO(), instance)

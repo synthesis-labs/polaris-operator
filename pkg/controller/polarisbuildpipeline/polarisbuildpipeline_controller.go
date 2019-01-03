@@ -96,6 +96,7 @@ Resources:
     Properties:
       BucketName: !Sub ${PipelineName}-artifacts
       AccessControl: Private
+{{if .Builds}}
 {{range .Builds }}  
   CodeBuildProject{{.Name | CloudFormationName}}:
     Type: AWS::CodeBuild::Project
@@ -134,13 +135,14 @@ Resources:
           - Name: AWS_DEFAULT_REGION
             Value: !Ref AWS::Region
           - Name: REPOSITORY_URI
-            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/{{.ContainerRepository}}
+            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/{{.ContainerRegistry}}
           - Name: DOCKERFILE_LOCATION
             Value: {{ .DockerfileLocation }}
           - Name: TAG
             Value: {{ .Tag }}
       Name: !Sub ${PipelineName}-build-{{.Name }}
       ServiceRole: !Ref CodeBuildServiceRole
+{{end}}
 {{end}}
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -163,10 +165,11 @@ Resources:
                 RepositoryName: {{.Source.CodeCommitRepo}}
                 BranchName: {{.Source.Branch}}
               OutputArtifacts:
-              - Name: Sources                
+              - Name: Sources
               RunOrder: 1
         - Name: Build
           Actions:
+{{if .Builds}}
 {{range .Builds }}
             - Name: build-{{.Name}}
               ActionTypeId:
@@ -179,6 +182,7 @@ Resources:
               InputArtifacts:
                 - Name: Sources
               RunOrder: 2
+{{end}}
 {{end}}
 `
 
@@ -214,8 +218,20 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner PolarisBuildPipeline
+	// Also watch for changes to any build steps where we are the owner
+	//
+	/*
+			err = c.Watch(&source.Kind{Type: &polarisv1alpha1.PolarisBuildStep{}}, &handler.EnqueueRequestForOwner{
+				IsController: true,
+				OwnerType:    &polarisv1alpha1.PolarisBuildPipeline{},
+			})
+			if err != nil {
+				return err
+		  }
+	*/
+
+	// And also watch for changes to any stacks where we are the owner
+	//
 	err = c.Watch(&source.Kind{Type: &polarisv1alpha1.PolarisStack{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &polarisv1alpha1.PolarisBuildPipeline{},
@@ -293,8 +309,18 @@ func (r *ReconcilePolarisBuildPipeline) Reconcile(request reconcile.Request) (re
 		return reconcile.Result{}, err
 	}
 
-	// Stack already exists - don't requeue
+	// Stack already exists - do an update
+	//
 	reqLogger.Info("Skip reconcile: Stack already exists", "Stack.Namespace", found.Namespace, "Stack.Name", found.Name)
+
+	// Merge the spec from the new one
+	//
+	stack.Spec.DeepCopyInto(&found.Spec)
+	err = r.client.Update(context.TODO(), found)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{}, nil
 }
 

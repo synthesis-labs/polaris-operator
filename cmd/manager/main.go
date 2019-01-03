@@ -45,6 +45,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.Info("Watching namespace", "Namespace", namespace)
+
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
 	if err != nil {

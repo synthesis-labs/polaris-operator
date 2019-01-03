@@ -40,6 +40,10 @@ func RenderCloudformationTemplate(templateBody string, obj interface{}) (string,
 	var buff bytes.Buffer
 
 	err = tmpl.Execute(&buff, obj)
+	if err != nil {
+		return "", err
+	}
+
 	var templateResult = buff.String()
 	return templateResult, nil
 }
