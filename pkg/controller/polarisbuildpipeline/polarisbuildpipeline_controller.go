@@ -167,9 +167,9 @@ Resources:
               OutputArtifacts:
               - Name: Sources
               RunOrder: 1
+{{if .Builds}}
         - Name: Build
           Actions:
-{{if .Builds}}
 {{range .Builds }}
             - Name: build-{{.Name}}
               ActionTypeId:

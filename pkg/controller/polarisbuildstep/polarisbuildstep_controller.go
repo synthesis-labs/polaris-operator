@@ -134,14 +134,16 @@ func (r *ReconcilePolarisBuildStep) Reconcile(request reconcile.Request) (reconc
 		//
 		utils.RemoveFinalizer(&pipeline.ObjectMeta, fmt.Sprintf("polaris.cleanup.buildstep.%s", instance.Name))
 
-		err = r.client.Update(context.TODO(), instance)
+		// Update pipeline first (it might be already updated so we may need to retry if we get an error)
+		//
+		err = r.client.Update(context.TODO(), &pipeline)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
 
-		// Update pipeline
+		// Now update the instance and let it be deleted
 		//
-		err = r.client.Update(context.TODO(), &pipeline)
+		err = r.client.Update(context.TODO(), instance)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
