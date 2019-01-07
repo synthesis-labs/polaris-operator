@@ -155,14 +155,23 @@ func (r *ReconcilePolarisStack) Reconcile(request reconcile.Request) (reconcile.
 	} else {
 		// Cloudformation has got it - just update it at CF and then pull status back down
 		//
-		err = updateStack(sess, instance.Status.Name, params, templateBody)
+		err = updateStack(sess, stackName, params, templateBody)
 		if err != nil {
-			if !(strings.Contains(err.Error(), "ValidationError: No updates are to be performed") ||
-				strings.Contains(err.Error(), "_IN_PROGRESS state and can not be updated") || // Deals with CREATE_ and UPDATE_ cases
-				strings.Contains(err.Error(), "ROLLBACK_COMPLETE state and can not be updated")) {
+			// ROLLBACK_COMPLETE is a different case
+			//
+			if strings.Contains(err.Error(), "ROLLBACK_COMPLETE state and can not be updated") {
+				reqLogger.Info("Deleteing rolled back stack!")
+				err = deleteStack(sess, instance)
+				if err != nil {
+					reqLogger.Error(err, "Unable to delete stack after it was rolled back")
+					return reconcile.Result{}, err
+				}
+			} else if !(strings.Contains(err.Error(), "ValidationError: No updates are to be performed") ||
+				strings.Contains(err.Error(), "_IN_PROGRESS state and can not be updated")) { // Deals with CREATE_ and UPDATE_ cases
 				reqLogger.Error(err, "Unable to update stack")
 				return reconcile.Result{}, err
 			}
+
 		}
 
 		// Update the state etc
@@ -292,6 +301,7 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 		// Do nothing - stack already deleted, but need to carry on to remove all the finalizers
 		//
 	} else if err != nil {
+		log.Info("Error while trying to delete stack: ", "error", err)
 		return err
 	}
 
@@ -347,17 +357,17 @@ func deleteStack(sess *session.Session, instance *polarisv1alpha1.PolarisStack) 
 	// Delete the stack and remove the finalizer
 	//
 	if utils.HasFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack") {
-		log.Info("Deleting stack", "StackName", instance.Status.Name)
-		_, err := cloudformationsvc.DeleteStack((&cloudformation.DeleteStackInput{}).
-			SetStackName(instance.Status.Name))
-
-		if err != nil && strings.Contains(err.Error(), "does not exist") {
-			log.Info("Stack does not exist")
-		} else if err != nil {
-			return err
-		}
-
 		utils.RemoveFinalizer(&instance.ObjectMeta, "polaris.cleanup.aws.stack")
+	}
+
+	log.Info("Deleting stack", "StackName", instance.Status.Name)
+	_, err = cloudformationsvc.DeleteStack((&cloudformation.DeleteStackInput{}).
+		SetStackName(instance.Status.Name))
+
+	if err != nil && strings.Contains(err.Error(), "does not exist") {
+		log.Info("Stack does not exist")
+	} else if err != nil {
+		return err
 	}
 
 	return nil

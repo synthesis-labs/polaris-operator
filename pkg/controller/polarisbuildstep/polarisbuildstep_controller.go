@@ -190,16 +190,16 @@ func (r *ReconcilePolarisBuildStep) Reconcile(request reconcile.Request) (reconc
 	//
 	utils.AddFinalizers(&pipeline.ObjectMeta, fmt.Sprintf("polaris.cleanup.buildstep.%s", instance.Name))
 
-	// Update
+	// Update the pipeline first (it might already be updated and we would need to retry)
 	//
-	err = r.client.Update(context.TODO(), instance)
+	err = r.client.Update(context.TODO(), &pipeline)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
 	// Update
 	//
-	err = r.client.Update(context.TODO(), &pipeline)
+	err = r.client.Update(context.TODO(), instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
