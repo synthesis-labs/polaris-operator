@@ -33,6 +33,7 @@ type PolarisBuildStepStatus struct {
 
 // PolarisBuildStep is the Schema for the polarisbuildsteps API
 // +k8s:openapi-gen=true
+// +genclient
 type PolarisBuildStep struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

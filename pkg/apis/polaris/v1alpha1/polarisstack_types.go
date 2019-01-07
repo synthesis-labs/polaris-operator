@@ -32,6 +32,7 @@ type PolarisStackStatus struct {
 
 // PolarisStack is the Schema for the polarisstacks API
 // +k8s:openapi-gen=true
+// +genclient
 type PolarisStack struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

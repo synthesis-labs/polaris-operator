@@ -24,6 +24,7 @@ type PolarisSourceRepositoryStatus struct {
 
 // PolarisSourceRepository is the Schema for the polarissourcerepositories API
 // +k8s:openapi-gen=true
+// +genclient
 type PolarisSourceRepository struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

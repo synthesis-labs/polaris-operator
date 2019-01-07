@@ -4,6 +4,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +genclient
+// +genclient:noStatus
+
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -32,6 +35,7 @@ type PolarisBuildPipelineStatus struct {
 
 // PolarisBuildPipeline is the Schema for the polarisbuildpipelines API
 // +k8s:openapi-gen=true
+// +genclient
 type PolarisBuildPipeline struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
