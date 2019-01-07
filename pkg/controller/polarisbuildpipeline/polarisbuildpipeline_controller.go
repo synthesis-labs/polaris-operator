@@ -331,7 +331,9 @@ func getStackForInstance(instance *polarisv1alpha1.PolarisBuildPipeline) (*polar
 	}
 
 	labels := map[string]string{
-		"app": instance.Name,
+		"app":               instance.Name,
+		"polaris-project":   instance.Labels["polaris-project"],
+		"polaris-component": instance.Labels["polaris-component"],
 	}
 	return &polarisv1alpha1.PolarisStack{
 		ObjectMeta: metav1.ObjectMeta{

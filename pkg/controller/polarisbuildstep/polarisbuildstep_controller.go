@@ -197,6 +197,8 @@ func (r *ReconcilePolarisBuildStep) Reconcile(request reconcile.Request) (reconc
 		return reconcile.Result{}, err
 	}
 
+	instance.Status.Status = "TBD - fetch from CodeBuild"
+
 	// Update
 	//
 	err = r.client.Update(context.TODO(), instance)
@@ -206,5 +208,7 @@ func (r *ReconcilePolarisBuildStep) Reconcile(request reconcile.Request) (reconc
 
 	// Thats it!
 
+	// Continue to requeue - so we can update the build status from codebuild
+	//
 	return reconcile.Result{}, nil
 }
