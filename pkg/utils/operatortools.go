@@ -18,7 +18,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
-var log = logf.Log.WithName("operatortools")
+var log = logf.Log.WithName("utils")
 
 // HasFinalizer checks whether a particular finalizer is set
 //

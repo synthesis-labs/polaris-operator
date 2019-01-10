@@ -2,36 +2,34 @@ package utils
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
 )
 
 // Basically a package which holds a bunch of context around the AWS environment
 // we are launched within
 //
-
 var accountID string
-var region string
+var region = "eu-west-1"
 
 // Populate must be called at some stage to populate all the environment configs
 //
 func Populate() error {
 
-	return nil
-
 	sess, _ := session.NewSession(&aws.Config{
 		// Region: aws.String("eu-west-1")},
 	})
 
-	ec2metadataClient := ec2metadata.New(sess)
+	stsClient := sts.New(sess)
 
-	identity, err := ec2metadataClient.GetInstanceIdentityDocument()
+	identity, err := stsClient.GetCallerIdentity(&sts.GetCallerIdentityInput{})
 	if err != nil {
 		return err
 	}
 
-	accountID = identity.AccountID
-	region = identity.Region
+	accountID = *identity.Account
+
+	log.Info("Populated values", "AccountID", accountID, "Region", region)
 
 	return nil
 }

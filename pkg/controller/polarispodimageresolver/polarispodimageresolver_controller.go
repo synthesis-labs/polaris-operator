@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/synthesis-labs/polaris-operator/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -102,9 +103,7 @@ func (r *ReconcilePolarisPodImageResolver) Reconcile(request reconcile.Request) 
 	for pos, container := range instance.Spec.Containers {
 		if strings.Contains(container.Image, "polaris://") {
 			needsUpdate = true
-			awsAccount := "535282574996"
-			awsRegion := "eu-west-1"
-			newBase := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/", awsAccount, awsRegion)
+			newBase := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/", utils.AccountID(), utils.Region())
 			newImage := strings.Replace(container.Image, "polaris://", newBase, 1)
 			container.Image = newImage
 			instance.Spec.Containers[pos].Image = newImage
