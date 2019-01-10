@@ -13,6 +13,7 @@ import (
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"github.com/synthesis-labs/polaris-operator/pkg/apis"
 	"github.com/synthesis-labs/polaris-operator/pkg/controller"
+	"github.com/synthesis-labs/polaris-operator/pkg/utils"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -82,6 +83,14 @@ func main() {
 
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr); err != nil {
+		log.Error(err, "")
+		os.Exit(1)
+	}
+
+	// Setup the AWS environment context
+	//
+	log.Info("Populating AWS environment.")
+	if err := utils.Populate(); err != nil {
 		log.Error(err, "")
 		os.Exit(1)
 	}
