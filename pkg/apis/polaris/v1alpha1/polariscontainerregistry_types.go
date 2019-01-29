@@ -30,7 +30,6 @@ type PolarisContainerRegistry struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   PolarisContainerRegistrySpec   `json:"spec,omitempty"`
-	Stack  PolarisCloudformationStatus    `json:"stack,omitempty"`
 	Status PolarisContainerRegistryStatus `json:"status,omitempty"`
 }
 
