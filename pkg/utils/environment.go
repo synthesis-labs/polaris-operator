@@ -2,6 +2,7 @@ package utils
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
 )
@@ -10,6 +11,7 @@ import (
 // we are launched within
 //
 var accountID string
+var availabilityZone = "eu-west-1a"
 var region = "eu-west-1"
 
 // Populate must be called at some stage to populate all the environment configs
@@ -28,8 +30,20 @@ func Populate() error {
 	}
 
 	accountID = *identity.Account
+	ec2metadataClient := ec2metadata.New(sess)
 
-	log.Info("Populated values", "AccountID", accountID, "Region", region)
+	instanceIdentityDocument, err := ec2metadataClient.GetInstanceIdentityDocument()
+	if err != nil {
+		log.Error(err, "Unable to get ec2metadata info (possibly running outside of AWS?). Using default values.")
+		return nil
+	}
+
+	availabilityZone = instanceIdentityDocument.AvailabilityZone
+
+	// Drop the last character of the AZ for the region
+	//
+	region = availabilityZone[0:len(availabilityZone)]
+	log.Info("Populated values", "AccountID", accountID, "AvailabilityZone", availabilityZone, "Region", region)
 
 	return nil
 }
@@ -44,4 +58,10 @@ func AccountID() string {
 //
 func Region() string {
 	return region
+}
+
+// AvailabilityZone returns the AWS availability zone
+//
+func AvailabilityZone() string {
+	return availabilityZone
 }
